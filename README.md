@@ -36,15 +36,15 @@ uow-frontend/   React (Vite) frontend
 
 ## Model weights (not in the repo)
 
-The `.onnx` model files are **not committed** (they exceed GitHub's 100 MB limit).
-Place a model at `uow-backend/app/services/models/best.onnx` before running, e.g.:
+The trained `.onnx` model is **not committed** (it exceeds GitHub's 100 MB limit).
+Download it and place it at `uow-backend/app/services/models/best.onnx` before running:
 
-- The published 9-class base model:
-  https://github.com/mdciri/YOLOv7-Bone-Fracture-Detection/releases/download/trained-models/yolov7-p6-bonefracture.onnx
-- Or your own retrained 2-class model (`fracture`, `metal`).
+**Download the model:** https://drive.google.com/file/d/1isN3AVLINeNHz_ybYwDtTyjPTvUETiju/view?usp=sharing
 
+It is a YOLOv7-p6 detector trained for two classes — `fracture` and `metal`.
 Set the active model in `uow-backend/app/core/config.py` (`MODEL_FILE` + `MODEL_CLASSES`).
-On a container host you can instead set `MODEL_URL` and `start.sh` downloads it on boot.
+On a container host you can instead set `MODEL_URL` to a **direct-download** link
+and `start.sh` fetches it on boot.
 
 ## Local development
 
@@ -91,8 +91,10 @@ npm run dev                    # http://localhost:5173
 - **Database → Neon / Supabase:** free managed PostgreSQL; use its connection
   string as `DATABASE_URL`.
 
-## Credits
+## Acknowledgements
 
-- Base YOLOv7 bone-fracture model: **[mdciri/YOLOv7-Bone-Fracture-Detection](https://github.com/mdciri/YOLOv7-Bone-Fracture-Detection)**
-- Dataset: **[GRAZPEDWRI-DX](https://www.nature.com/articles/s41597-022-01328-z)** (pediatric wrist radiographs)
-- Detector: **[YOLOv7](https://github.com/WongKinYiu/yolov7)** (Wang et al.)
+The detection model in this project was trained by the project author. It is
+built on the **YOLOv7** object-detection architecture
+([WongKinYiu/yolov7](https://github.com/WongKinYiu/yolov7), GPL-3.0) and trained
+on the public **GRAZPEDWRI-DX** wrist-radiograph dataset
+([Nagy et al., 2022](https://www.nature.com/articles/s41597-022-01328-z)).
