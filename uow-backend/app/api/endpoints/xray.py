@@ -1,0 +1,135 @@
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Header
+from fastapi.responses import FileResponse
+from typing import List, Dict, Any, Optional
+from app.services.xray_processor import XRayProcessor
+from app.services.wrist_xray_validator import (
+    validate_wrist_xray_image,
+    ERROR_MESSAGE as WRIST_VALIDATION_MESSAGE,
+)
+from app.services.report_generator import build_detection_report
+from app.core.utils import save_file1
+from app.core.config import (
+    DEFAULT_CONF_THRESHOLD,
+    ALLOWED_EXTENSIONS,
+    INVALID_IMAGE_MESSAGE,
+)
+import os
+
+router = APIRouter()
+processor = XRayProcessor()
+
+
+def _resolve_patient_name(authorization: Optional[str]) -> Optional[str]:
+    """Resolve the logged-in user's display name from the JWT, if present.
+
+    Returns the user's name, falling back to their email, or None when the
+    request is unauthenticated or the token is invalid. Detection is never
+    gated on this — an anonymous upload simply produces no patient name.
+    The User model / DB session live in app.main, so they are imported lazily
+    here (at request time) to avoid a circular import.
+    """
+    if not authorization or not authorization.lower().startswith("bearer "):
+        return None
+    token = authorization.split(" ", 1)[1].strip()
+    try:
+        from jose import jwt, JWTError
+        from app.main import SECRET_KEY, ALGORITHM, SessionLocal, User
+
+        try:
+            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        except JWTError:
+            return None
+        email = payload.get("sub")
+        if not email:
+            return None
+
+        db = SessionLocal()
+        try:
+            user = db.query(User).filter(User.email == email).first()
+        finally:
+            db.close()
+        if user is None:
+            return None
+
+        name = (getattr(user, "name", None) or "").strip()
+        return name or (getattr(user, "email", None) or None)
+    except Exception:
+        # Never let report-name resolution break the detection flow.
+        return None
+
+@router.post("/", response_model=Dict[str, Any])  # Accept any type for values
+async def upload_xray_image(
+    file: UploadFile = File(...),
+    # Form(...) so the value the frontend sends in FormData is actually read
+    # (previously this was a query param, so the slider value was ignored).
+    conf_threshold: float = Form(DEFAULT_CONF_THRESHOLD),
+    debug: bool = False,
+    authorization: Optional[str] = Header(None),
+):
+    # Step 1: validate file type before doing anything else
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext not in ALLOWED_EXTENSIONS or not (file.content_type or "").startswith("image/"):
+        raise HTTPException(status_code=400, detail=INVALID_IMAGE_MESSAGE)
+
+    # Save uploaded file
+    file_path = save_file1(file, "xray")
+
+    # Step 2: wrist X-ray validation layer (runs BEFORE the detection model).
+    # This independent, classical-image check rejects anything that is not a
+    # wrist/forearm radiograph (photos, screenshots, documents, logos, MRI,
+    # CT, brain/chest/dental scans, etc.). It does NOT use the YOLO model and
+    # does NOT change detection thresholds or sensitivity. If the image is not
+    # a valid wrist X-ray, we stop here: no inference, no bounding boxes, no
+    # detection report.
+    validation = validate_wrist_xray_image(file_path)
+    if not validation["is_valid"]:
+        if debug:
+            return {"error": WRIST_VALIDATION_MESSAGE, "validation": validation}
+        raise HTTPException(status_code=422, detail=WRIST_VALIDATION_MESSAGE)
+
+    try:
+        # Step 3: run detection on the validated wrist X-ray (UNCHANGED).
+        result = processor.process_image(
+            file_path=file_path,
+            output_dir="processed",
+            conf_threshold=conf_threshold,
+            debug=debug,
+        )
+
+        # Build a human-readable AI screening report (replaces the raw YOLO
+        # label file as the user-facing "Download Report").
+        base_name = os.path.splitext(os.path.basename(file_path))[0]
+        report_path = os.path.join("processed", f"{base_name}_report.txt")
+        report_text = build_detection_report(
+            detections_detailed=result.get("detections_detailed", []),
+            image_size=result.get("image_size", {}),
+            original_filename=file.filename or os.path.basename(file_path),
+            patient_name=_resolve_patient_name(authorization),
+            image_quality_ok=validation.get("is_valid", True),
+        )
+        with open(report_path, "w", encoding="utf-8") as rf:
+            rf.write(report_text)
+
+        response: Dict[str, Any] = {
+            "processed_image_url": result["processed_image"],
+            "detections_url": result["detections_file"],
+            "report_url": report_path,
+            "detections": result["detections"],  # List of dictionaries
+        }
+        if debug:
+            response["debug"] = dict(result["debug"], validation=validation)
+        return response
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/download/{file_path:path}")
+async def download_xray_image(file_path: str):
+    full_path = os.path.join(os.getcwd(), file_path)
+
+    if not os.path.exists(full_path):
+        raise HTTPException(status_code=404, detail="File not found")
+
+    return FileResponse(full_path)

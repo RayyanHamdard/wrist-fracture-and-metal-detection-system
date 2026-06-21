@@ -1,0 +1,253 @@
+@import url("https://fonts.googleapis.com/css2?family=DM+Sans:wght@100;400;500;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@100;400;500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/icon?family=Material+Icons");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Base styles */
+body {
+  @apply leading-normal m-0 antialiased;
+  font-family: 'DM Sans', 'Inter', sans-serif;
+}
+
+/* Tailwind preflight is disabled in this project, so bare <button> elements
+   would otherwise show the browser's default light grey background. Normalize
+   them here. MUI buttons and any bg-* utility classes have higher specificity
+   and are unaffected. */
+button {
+  background-color: transparent;
+  background-image: none;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+/* Eye / password-visibility blink: gentle blink that pauses on hover so it's
+   easy to click. */
+@keyframes blink {
+  0%, 88%, 100% { opacity: 1; }
+  94% { opacity: 0.1; }
+}
+.animate-blink { animation: blink 3s ease-in-out infinite; }
+.animate-blink:hover { animation: none; }
+
+/* Prevent horizontal scroll / overflow on small screens */
+html, body, #root {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+img, video, svg { max-width: 100%; }
+
+
+*,
+::before,
+::after {
+  border-width: 0;
+  box-sizing: border-box;
+}
+
+/* Smooth scrolling */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(135deg, rgb(7, 102, 102), #1f2937);
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(135deg, rgb(7, 130, 130), #2d3748);
+}
+
+/* Glassmorphism utility */
+@layer utilities {
+  .glass {
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+  }
+  
+  .glass-dark {
+    background: rgba(0, 0, 0, 0.2);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .gradient-primary {
+    background: linear-gradient(135deg, rgb(7, 102, 102), #1f2937);
+  }
+
+  .gradient-accent {
+    background: linear-gradient(90deg, #ff7869 30%, #833766 80%);
+  }
+
+  .text-gradient {
+    background: linear-gradient(90deg, #ff7869 30%, #833766 80%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .hover-lift {
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+  }
+
+  .hover-lift:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  }
+
+  .animate-float {
+    animation: float 6s ease-in-out infinite;
+  }
+
+  .animate-pulse-slow {
+    animation: pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  .animate-gradient {
+    background-size: 200% 200%;
+    animation: gradient 8s ease infinite;
+  }
+}
+
+/* Keyframes */
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-20px);
+  }
+}
+
+@keyframes gradient {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+/* Button styles */
+.btn-primary {
+  @apply px-6 py-3 rounded-full font-semibold text-white transition-all duration-300;
+  background: linear-gradient(135deg, rgb(7, 102, 102), #1f2937);
+}
+
+.btn-primary:hover {
+  @apply shadow-lg;
+  transform: translateY(-2px);
+  background: linear-gradient(135deg, rgb(7, 130, 130), #2d3748);
+}
+
+.btn-secondary {
+  @apply px-6 py-3 rounded-full font-semibold border-2 border-white/30 text-white transition-all duration-300;
+  background: transparent;
+}
+
+.btn-secondary:hover {
+  @apply bg-white/10 border-white/50;
+}
+
+/* Card styles */
+.card-glass {
+  @apply rounded-2xl p-6 transition-all duration-300;
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.card-glass:hover {
+  @apply shadow-2xl;
+  transform: translateY(-4px);
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* Input styles */
+.input-glass {
+  @apply w-full px-4 py-3 rounded-xl text-white placeholder-gray-400 transition-all duration-300;
+  background: rgba(255, 255, 255, 0.1);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+}
+
+.input-glass:focus {
+  @apply outline-none;
+  border-color: rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* Section padding responsive */
+.section-padding {
+  @apply px-4 py-12 sm:px-6 sm:py-16 md:px-8 md:py-20 lg:px-12 lg:py-24;
+}
+
+/* Container responsive */
+.container-responsive {
+  @apply w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8;
+}
+
+/* Responsive text */
+.heading-xl {
+  @apply text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold;
+}
+
+.heading-lg {
+  @apply text-2xl sm:text-3xl md:text-4xl font-bold;
+}
+
+.heading-md {
+  @apply text-xl sm:text-2xl md:text-3xl font-semibold;
+}
+
+.text-body {
+  @apply text-base sm:text-lg text-gray-300;
+}
+
+/* Animations for page transitions */
+.page-enter {
+  opacity: 0;
+  transform: translateY(20px);
+}
+
+.page-enter-active {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 0.4s ease, transform 0.4s ease;
+}
+
+/* Skeleton loading */
+.skeleton {
+  @apply animate-pulse bg-gray-300/20 rounded;
+}
+
+/* Focus visible styles for accessibility */
+:focus-visible {
+  @apply outline-2 outline-offset-2 outline-teal-500;
+}
+
+/* Selection color */
+::selection {
+  background: rgba(7, 102, 102, 0.5);
+  color: white;
+}

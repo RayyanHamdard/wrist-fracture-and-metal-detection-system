@@ -1,0 +1,98 @@
+# Wrist Fracture and Metal Detection System
+
+An AI-powered web application that detects **fractures** and **metal implants** in
+wrist X-ray images, returns confidence-scored results and a readable screening
+report, and provides role-based dashboards for clients, hospitals, and admins.
+
+> ⚕️ **Medical disclaimer:** This system is a preliminary **screening aid**, not a
+> diagnostic device. All results must be confirmed by a qualified radiologist.
+
+## Model performance
+
+Evaluated on a held-out test set (YOLOv7-p6, GRAZPEDWRI-DX wrist dataset):
+
+| Metric | Value |
+| --- | --- |
+| mAP@0.5 (all classes) | **0.884** |
+| Fracture AP@0.5 | **0.914** |
+| Metal AP@0.5 | **0.855** |
+| Best F1 | **0.85** |
+
+Full PR / F1 / confusion-matrix charts are shown on the app's **Evidence** page.
+
+## Tech stack
+
+- **Frontend:** React + TypeScript + Vite, Tailwind CSS, MUI, Framer Motion
+- **Backend:** FastAPI (Python), ONNX Runtime + OpenCV inference, SQLAlchemy
+- **Database:** PostgreSQL
+- **Model:** YOLOv7-p6 exported to ONNX
+
+## Repository structure
+
+```
+uow-backend/    FastAPI backend, ONNX inference, auth, dashboards
+uow-frontend/   React (Vite) frontend
+```
+
+## Model weights (not in the repo)
+
+The `.onnx` model files are **not committed** (they exceed GitHub's 100 MB limit).
+Place a model at `uow-backend/app/services/models/best.onnx` before running, e.g.:
+
+- The published 9-class base model:
+  https://github.com/mdciri/YOLOv7-Bone-Fracture-Detection/releases/download/trained-models/yolov7-p6-bonefracture.onnx
+- Or your own retrained 2-class model (`fracture`, `metal`).
+
+Set the active model in `uow-backend/app/core/config.py` (`MODEL_FILE` + `MODEL_CLASSES`).
+On a container host you can instead set `MODEL_URL` and `start.sh` downloads it on boot.
+
+## Local development
+
+### Backend
+```bash
+cd uow-backend
+python -m venv uow-env && source uow-env/bin/activate   # Windows: uow-env\Scripts\activate
+pip install -r requirements.txt
+cp env.example.txt .env        # then edit values (DB, SECRET_KEY, ALLOWED_ORIGINS)
+uvicorn app.main:app --reload  # http://localhost:8000
+```
+
+### Frontend
+```bash
+cd uow-frontend
+npm install
+cp .env.example .env           # set VITE_API_URL=http://localhost:8000
+npm run dev                    # http://localhost:5173
+```
+
+## Environment variables
+
+**Backend (`uow-backend/.env`):**
+
+| Var | Purpose |
+| --- | --- |
+| `DATABASE_URL` | PostgreSQL connection string |
+| `SECRET_KEY` | JWT signing secret (use a long random value) |
+| `ALLOWED_ORIGINS` | Comma-separated allowed frontend origins (CORS) |
+
+**Frontend (`uow-frontend/.env`):**
+
+| Var | Purpose |
+| --- | --- |
+| `VITE_API_URL` | Base URL of the backend API |
+
+## Deployment (free-tier friendly)
+
+- **Frontend → Vercel:** import the repo, set **Root Directory** to `uow-frontend`,
+  add env var `VITE_API_URL` = your backend URL. (`vercel.json` handles SPA routing.)
+- **Backend → Hugging Face Spaces (Docker)** or Render: builds from
+  `uow-backend/Dockerfile`. Set Secrets: `DATABASE_URL`, `SECRET_KEY`,
+  `ALLOWED_ORIGINS` (your Vercel URL), and `MODEL_URL` (link to the model file).
+- **Database → Neon / Supabase:** free managed PostgreSQL; use its connection
+  string as `DATABASE_URL`.
+
+## Credits
+
+- Base YOLOv7 bone-fracture model: **[mdciri/YOLOv7-Bone-Fracture-Detection](https://github.com/mdciri/YOLOv7-Bone-Fracture-Detection)**
+- Dataset: **[GRAZPEDWRI-DX](https://www.nature.com/articles/s41597-022-01328-z)** (pediatric wrist radiographs)
+- Detector: **[YOLOv7](https://github.com/WongKinYiu/yolov7)** (Wang et al.)

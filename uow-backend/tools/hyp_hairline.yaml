@@ -1,0 +1,32 @@
+# YOLOv7-p6 hyperparameters tuned for HAIRLINE wrist-fracture detection.
+# Based on yolov7 hyp.scratch.p6, adjusted for small/low-contrast findings and
+# class imbalance. Avoids augmentations that erase thin fracture lines.
+lr0: 0.01
+lrf: 0.1
+momentum: 0.937
+weight_decay: 0.0005
+warmup_epochs: 3.0
+warmup_momentum: 0.8
+warmup_bias_lr: 0.1
+box: 0.05
+cls: 0.3
+cls_pw: 1.0
+obj: 0.8            # raised: helps the model commit to small/faint objects
+obj_pw: 1.0
+iou_t: 0.20
+anchor_t: 4.0
+fl_gamma: 1.5      # focal loss: focuses learning on hard (hairline) examples
+hsv_h: 0.0         # radiographs are grayscale -> no hue jitter
+hsv_s: 0.0
+hsv_v: 0.30        # brightness jitter only
+degrees: 5.0       # mild rotation
+translate: 0.1
+scale: 0.4
+shear: 0.0
+perspective: 0.0
+flipud: 0.0
+fliplr: 0.5
+mosaic: 1.0        # helps small-object recall
+mixup: 0.05
+copy_paste: 0.1    # paste real fracture regions -> more positive samples
+paste_in: 0.0

@@ -1,0 +1,58 @@
+# ---------------------------------------------------------------------------
+# Secrets — NEVER commit these to a public repo
+# ---------------------------------------------------------------------------
+.env
+*.env
+!*.env.example
+uow-backend/.env
+
+# ---------------------------------------------------------------------------
+# Model weights — too large for GitHub's 100 MB limit (host via Release/HF/LFS)
+# ---------------------------------------------------------------------------
+*.onnx
+*.pt
+uow-backend/app/services/models/*.onnx
+
+# ---------------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+uow-backend/uow-env/
+uow-backend/venv/
+venv/
+.venv/
+
+# ---------------------------------------------------------------------------
+# Databases & generated/runtime artifacts
+# ---------------------------------------------------------------------------
+*.db
+*.sqlite3
+*.db-journal
+uow-backend/processed/
+uow-backend/app/static/uploads/
+
+# ---------------------------------------------------------------------------
+# Frontend
+# ---------------------------------------------------------------------------
+node_modules/
+/uow-frontend/node_modules
+/uow-frontend/build
+/uow-frontend/dist
+/uow-frontend/.env
+/uow-frontend/.env.local
+/uow-frontend/.env.*.local
+# Unused large media (the hero uses Video@2compressed.mp4 instead)
+uow-frontend/public/video@2x.mp4
+uow-frontend/public/Video@2 (compressed).zip
+
+# ---------------------------------------------------------------------------
+# Editor / OS / misc
+# ---------------------------------------------------------------------------
+.qodo
+.DS_Store
+.idea/
+.vscode/
+*.swp
