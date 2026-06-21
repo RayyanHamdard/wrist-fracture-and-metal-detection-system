@@ -81,16 +81,6 @@ npm run dev                    # http://localhost:5173
 | --- | --- |
 | `VITE_API_URL` | Base URL of the backend API |
 
-## Deployment (free-tier friendly)
-
-- **Frontend → Vercel:** import the repo, set **Root Directory** to `uow-frontend`,
-  add env var `VITE_API_URL` = your backend URL. (`vercel.json` handles SPA routing.)
-- **Backend → Hugging Face Spaces (Docker)** or Render: builds from
-  `uow-backend/Dockerfile`. Set Secrets: `DATABASE_URL`, `SECRET_KEY`,
-  `ALLOWED_ORIGINS` (your Vercel URL), and `MODEL_URL` (link to the model file).
-- **Database → Neon / Supabase:** free managed PostgreSQL; use its connection
-  string as `DATABASE_URL`.
-
 ## Acknowledgements
 
 The detection model in this project was trained by the project author. It is
