@@ -20,12 +20,36 @@ interface ProcessedResult {
   warning?: string;
 }
 
+// Dissolvability reference for common orthopedic implant metals. A metal is
+// only reported as "dissolvable" when the user identifies it as a bioabsorbable
+// metal — it is NEVER inferred from the detection confidence. Time values are
+// general, literature-based resorption ranges for biodegradable implants and
+// are not patient-specific.
+interface MetalProfile {
+  label: string;
+  dissolvable: boolean;
+  time: string; // estimated resorption time; empty for permanent metals
+}
+
+const METAL_PROFILES: Record<string, MetalProfile> = {
+  magnesium:       { label: 'Magnesium (Mg)',         dissolvable: true,  time: '~6-12 months' },
+  zinc:            { label: 'Zinc (Zn)',              dissolvable: true,  time: '~12-24 months' },
+  iron:            { label: 'Iron (Fe)',              dissolvable: true,  time: '~24+ months (very slow)' },
+  stainless_steel: { label: 'Stainless steel (316L)', dissolvable: false, time: '' },
+  titanium:        { label: 'Titanium (Ti)',          dissolvable: false, time: '' },
+  cobalt_chromium: { label: 'Cobalt-chromium (CoCr)', dissolvable: false, time: '' },
+  nitinol:         { label: 'Nitinol (NiTi)',         dissolvable: false, time: '' },
+};
+
 const XRayUpload: React.FC = () => {
   const navigate = useNavigate();
   const [processedResult, setProcessedResult] = useState<ProcessedResult | null>(null);
-  const [confidence, setConfidence] = useState<number>(0.3);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  // The metal type the user selects for each detected metal implant, keyed by
+  // its row index. This — not detection confidence — drives the dissolvability
+  // verdict.
+  const [metalChoices, setMetalChoices] = useState<Record<number, string>>({});
 
   const handleImageUpload = async (file: File) => {
     setIsProcessing(true);
@@ -33,10 +57,12 @@ const XRayUpload: React.FC = () => {
     // Clear any previous result so an invalid/rejected upload never shows
     // stale bounding boxes, detections, or download buttons.
     setProcessedResult(null);
+    // Reset metal-type selections so a new scan never inherits a previous
+    // image's dissolvability choices.
+    setMetalChoices({});
 
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('conf_threshold', confidence.toString());
   
     try {
       // Send the auth token so the backend can put the logged-in user's name
@@ -116,14 +142,25 @@ const XRayUpload: React.FC = () => {
     return "N/A";
   };
 
-  const getMetalInfo = (detection: Detection) => {
-    const confidencePercentage = detection.confidence * 100;
-    
-    if (detection.class_name === "metal") {
-      const months = Math.min(Math.ceil(confidencePercentage / 10), 10);
-      return `~${months} month${months > 1 ? "s" : ""}`;
-    }
-    return "N/A";
+  // Dissolvability verdict for a detected metal, derived from the metal type the
+  // user selected for this row. Returns null until a type is chosen, so the UI
+  // shows the selector first and the verdict only after the user identifies the
+  // metal.
+  const renderMetalForecast = (index: number) => {
+    const choice = metalChoices[index];
+    if (!choice) return null;
+    const profile = METAL_PROFILES[choice];
+    if (!profile) return null;
+
+    return profile.dissolvable ? (
+      <span className="text-green-300 text-xs font-medium">
+        Dissolvable · {profile.time}
+      </span>
+    ) : (
+      <span className="text-amber-300 text-xs font-medium">
+        Not dissolvable (permanent)
+      </span>
+    );
   };
 
   const getSeverityColor = (confidence: number) => {
@@ -134,6 +171,7 @@ const XRayUpload: React.FC = () => {
 
   const filteredDetections = processedResult?.detections?.filter(d => d.class_name !== "text") || [];
   const hasAbnormalities = filteredDetections.length > 0;
+  const hasMetal = filteredDetections.some(d => d.class_name === "metal");
 
   return (
     <div className="min-h-screen gradient-primary relative">
@@ -182,42 +220,8 @@ const XRayUpload: React.FC = () => {
                 <span className="w-8 h-8 rounded-full bg-teal-500/20 flex items-center justify-center text-teal-400 text-sm font-bold">1</span>
                 Upload Image
               </h2>
-              
-              {/* Confidence Threshold Slider */}
-              <div className="mb-6">
-                <div className="flex items-center justify-between mb-3">
-                  <label className="text-sm font-medium text-slate-300 flex items-center gap-2">
-                    Detection Threshold
-                    <div className="group relative">
-                      <FiInfo className="w-4 h-4 text-slate-400 cursor-help" />
-                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 w-48 text-center">
-                        Higher values show only high-confidence detections
-                      </div>
-                    </div>
-                  </label>
-                  <span className="text-teal-400 font-semibold bg-teal-500/20 px-3 py-1 rounded-full text-sm">
-                    {(confidence * 100).toFixed(0)}%
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min="0.2"
-                  max="1.0"
-                  step="0.05"
-                  value={confidence}
-                  onChange={(e) => setConfidence(parseFloat(e.target.value))}
-                  className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-teal-500"
-                  style={{
-                    background: `linear-gradient(to right, rgb(20 184 166) 0%, rgb(20 184 166) ${(confidence - 0.2) / 0.8 * 100}%, rgb(55 65 81) ${(confidence - 0.2) / 0.8 * 100}%, rgb(55 65 81) 100%)`
-                  }}
-                />
-                <div className="flex justify-between mt-1 text-xs text-slate-500">
-                  <span>20%</span>
-                  <span>100%</span>
-                </div>
-              </div>
-              
-              <ImageUploader 
+
+              <ImageUploader
                 maxSize={25} 
                 onImageUpload={handleImageUpload}
                 disabled={isProcessing}
@@ -308,6 +312,19 @@ const XRayUpload: React.FC = () => {
                     )}
                   </div>
 
+                  {/* Prompt: when a metal implant is detected, ask the user to
+                      identify it so dissolvability comes from real input rather
+                      than being assumed for every metal. */}
+                  {hasMetal && (
+                    <div className="p-3 bg-teal-500/10 border border-teal-500/30 rounded-xl flex items-start gap-2">
+                      <FiInfo className="w-4 h-4 text-teal-300 shrink-0 mt-0.5" />
+                      <p className="text-teal-200 text-xs">
+                        A metal implant was detected. Choose its metal type in the Dissolve Forecast
+                        column to see whether it is dissolvable and its estimated resorption time.
+                      </p>
+                    </div>
+                  )}
+
                   {/* Detections Table */}
                   {hasAbnormalities && (
                     <div className="overflow-x-auto">
@@ -338,12 +355,43 @@ const XRayUpload: React.FC = () => {
                                 </span>
                               </td>
                               <td className="py-3 px-2 text-slate-300 hidden sm:table-cell">{getHealingInfo(detection)}</td>
-                              <td className="py-3 px-2 text-slate-300 hidden md:table-cell">{getMetalInfo(detection)}</td>
+                              <td className="py-3 px-2 hidden md:table-cell">
+                                {detection.class_name === "metal" ? (
+                                  <div className="flex flex-col gap-1.5 min-w-[12rem]">
+                                    <select
+                                      value={metalChoices[index] ?? ''}
+                                      onChange={(e) =>
+                                        setMetalChoices((prev) => ({ ...prev, [index]: e.target.value }))
+                                      }
+                                      aria-label="Select detected metal type"
+                                      className="bg-gray-800 border border-slate-600 text-slate-200 text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-500"
+                                    >
+                                      <option value="">Select metal type…</option>
+                                      {Object.entries(METAL_PROFILES).map(([key, profile]) => (
+                                        <option key={key} value={key}>{profile.label}</option>
+                                      ))}
+                                    </select>
+                                    {renderMetalForecast(index)}
+                                  </div>
+                                ) : (
+                                  <span className="text-slate-300">N/A</span>
+                                )}
+                              </td>
                             </motion.tr>
                           ))}
                         </tbody>
                       </table>
                     </div>
+                  )}
+
+                  {/* Dissolvability disclaimer (shown only when a metal is present) */}
+                  {hasMetal && (
+                    <p className="text-xs text-slate-500">
+                      Dissolvability is based on the metal type you select. Time estimates are
+                      general, literature-based resorption ranges for biodegradable implants — not
+                      patient-specific medical guidance. Confirm the implant material and plan with
+                      a qualified clinician.
+                    </p>
                   )}
 
                   {/* Download Buttons */}
