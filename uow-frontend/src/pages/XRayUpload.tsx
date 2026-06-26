@@ -44,7 +44,6 @@ const METAL_PROFILES: Record<string, MetalProfile> = {
 const XRayUpload: React.FC = () => {
   const navigate = useNavigate();
   const [processedResult, setProcessedResult] = useState<ProcessedResult | null>(null);
-  const [confidence, setConfidence] = useState<number>(0.3);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   // The metal type the user selects for each detected metal implant, keyed by
@@ -64,7 +63,6 @@ const XRayUpload: React.FC = () => {
 
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('conf_threshold', confidence.toString());
   
     try {
       // Send the auth token so the backend can put the logged-in user's name
@@ -222,42 +220,8 @@ const XRayUpload: React.FC = () => {
                 <span className="w-8 h-8 rounded-full bg-teal-500/20 flex items-center justify-center text-teal-400 text-sm font-bold">1</span>
                 Upload Image
               </h2>
-              
-              {/* Confidence Threshold Slider */}
-              <div className="mb-6">
-                <div className="flex items-center justify-between mb-3">
-                  <label className="text-sm font-medium text-slate-300 flex items-center gap-2">
-                    Detection Threshold
-                    <div className="group relative">
-                      <FiInfo className="w-4 h-4 text-slate-400 cursor-help" />
-                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 w-48 text-center">
-                        Higher values show only high-confidence detections
-                      </div>
-                    </div>
-                  </label>
-                  <span className="text-teal-400 font-semibold bg-teal-500/20 px-3 py-1 rounded-full text-sm">
-                    {(confidence * 100).toFixed(0)}%
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min="0.2"
-                  max="1.0"
-                  step="0.05"
-                  value={confidence}
-                  onChange={(e) => setConfidence(parseFloat(e.target.value))}
-                  className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-teal-500"
-                  style={{
-                    background: `linear-gradient(to right, rgb(20 184 166) 0%, rgb(20 184 166) ${(confidence - 0.2) / 0.8 * 100}%, rgb(55 65 81) ${(confidence - 0.2) / 0.8 * 100}%, rgb(55 65 81) 100%)`
-                  }}
-                />
-                <div className="flex justify-between mt-1 text-xs text-slate-500">
-                  <span>20%</span>
-                  <span>100%</span>
-                </div>
-              </div>
-              
-              <ImageUploader 
+
+              <ImageUploader
                 maxSize={25} 
                 onImageUpload={handleImageUpload}
                 disabled={isProcessing}
