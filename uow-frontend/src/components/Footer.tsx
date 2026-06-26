@@ -1,7 +1,7 @@
 import { FunctionComponent } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Bone, Mail, Github, Linkedin, Heart } from "lucide-react";
+import { Mail, Github, Linkedin, Heart } from "lucide-react";
 import { Button } from "@mui/material";
 
 export type FooterType = {
@@ -40,13 +40,10 @@ const Footer: FunctionComponent<FooterType> = ({ className = "" }) => {
           {/* Brand Section */}
           <div className="lg:col-span-1">
             <motion.div 
-              className="flex items-center gap-2 mb-4"
+              className="mb-4"
               whileHover={{ scale: 1.02 }}
             >
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-r from-teal-500 to-cyan-500 flex items-center justify-center">
-                <Bone className="w-5 h-5 text-white" />
-              </div>
-              <span className="text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-orange-400 to-pink-500">
+              <span className="block text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-orange-400 to-pink-500">
                 Wrist Fracture and Metal Detection System
               </span>
             </motion.div>
