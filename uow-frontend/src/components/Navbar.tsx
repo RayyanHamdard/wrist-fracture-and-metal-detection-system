@@ -70,9 +70,16 @@ const Navbar: FunctionComponent<NavbarType> = ({ className = "" }) => {
             <motion.button
               whileHover={{ scale: 1.02 }}
               onClick={() => navigate("/")}
-              className="flex items-center text-left shrink-0 mr-2 text-[0.7rem] leading-[1.12] sm:text-sm md:text-base lg:text-lg font-bold text-transparent bg-clip-text bg-gradient-to-r from-orange-400 to-pink-500 max-w-[9.5rem] sm:max-w-[16rem] md:max-w-[22rem] lg:max-w-none"
+              className="flex items-center gap-3 text-left shrink-0 mr-2"
             >
-              Wrist Fracture and Metal Detection System
+              <img
+                src="/logo-icon.png"
+                alt="Wrist Fracture and Metal Detection System logo"
+                className="h-[3.75rem] sm:h-[4.5rem] md:h-20 w-auto shrink-0"
+              />
+              <span className="text-[0.7rem] leading-[1.12] sm:text-sm md:text-base lg:text-lg font-bold text-transparent bg-clip-text bg-gradient-to-r from-orange-400 to-pink-500 max-w-[9.5rem] sm:max-w-[16rem] md:max-w-[22rem] lg:max-w-none">
+                Wrist Fracture and Metal Detection System
+              </span>
             </motion.button>
 
             {/* Desktop Navigation */}
