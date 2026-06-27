@@ -519,9 +519,24 @@ class XRayProcessor:
         base_name = os.path.splitext(os.path.basename(file_path))[0]
         processed_path = os.path.join(output_dir, f"{base_name}_processed.png")
         detections_path = os.path.join(output_dir, f"{base_name}_detections.txt")
+        heatmap_path = os.path.join(output_dir, f"{base_name}_heatmap.png")
         cv2.imwrite(processed_path, cv2.cvtColor(processed_img, cv2.COLOR_RGB2BGR))
         with open(detections_path, 'w') as f:
             f.write(label_txt)
+
+        # Generate a simple heatmap of the highest-confidence fracture region
+        heatmap_saved = False
+        fractures = [d for d in final_detections if d["class_name"] == "fracture"]
+        if fractures:
+            best_frac = max(fractures, key=lambda x: x["confidence"])
+            x1, y1, x2, y2 = [int(v) for v in best_frac["bbox"]]
+            crop = img[y1:y2, x1:x2]
+            if crop.size > 0:
+                gray_crop = cv2.cvtColor(crop, cv2.COLOR_RGB2GRAY)
+                # Apply a colormap to simulate a heatmap of the density
+                heatmap_img = cv2.applyColorMap(gray_crop, cv2.COLORMAP_JET)
+                cv2.imwrite(heatmap_path, heatmap_img)
+                heatmap_saved = True
 
         # User-facing detections: display names only (never raw classes like "text")
         detections = [
@@ -543,6 +558,7 @@ class XRayProcessor:
 
         result = {
             "processed_image": processed_path,
+            "heatmap_path": heatmap_path if heatmap_saved else None,
             "detections_file": detections_path,
             "detections": detections,
             "detections_detailed": detections_detailed,

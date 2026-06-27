@@ -6,7 +6,7 @@ from app.services.wrist_xray_validator import (
     validate_wrist_xray_image,
     ERROR_MESSAGE as WRIST_VALIDATION_MESSAGE,
 )
-from app.services.report_generator import build_detection_report
+
 from app.core.utils import save_file1
 from app.core.config import (
     DEFAULT_CONF_THRESHOLD,
@@ -99,16 +99,18 @@ async def upload_xray_image(
         # Build a human-readable AI screening report (replaces the raw YOLO
         # label file as the user-facing "Download Report").
         base_name = os.path.splitext(os.path.basename(file_path))[0]
-        report_path = os.path.join("processed", f"{base_name}_report.txt")
-        report_text = build_detection_report(
+        report_path = os.path.join("processed", f"{base_name}_report.pdf")
+        from app.services.report_generator import generate_pdf_report
+        generate_pdf_report(
             detections_detailed=result.get("detections_detailed", []),
             image_size=result.get("image_size", {}),
             original_filename=file.filename or os.path.basename(file_path),
+            processed_image_path=result["processed_image"],
+            heatmap_path=result.get("heatmap_path"),
+            report_path=report_path,
             patient_name=_resolve_patient_name(authorization),
             image_quality_ok=validation.get("is_valid", True),
         )
-        with open(report_path, "w", encoding="utf-8") as rf:
-            rf.write(report_text)
 
         response: Dict[str, Any] = {
             "processed_image_url": result["processed_image"],
