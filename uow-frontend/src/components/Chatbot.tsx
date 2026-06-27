@@ -11,6 +11,7 @@ import {
   IconButton,
 } from "@mui/material";
 import { MessageCircleHeart, X, Send, MinusSquare, LogOut } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 
 // Define the shape of a conversation message.
@@ -40,12 +41,12 @@ const ChatbotPopup: React.FC = () => {
   const [isLogoutHovered, setIsLogoutHovered] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const [isAuthenticated, setIsAuthenticated] = useState(true);
+  const navigate = useNavigate();
+  const [isAuthenticated, setIsAuthenticated] = useState(!!localStorage.getItem("token"));
 
   useEffect(() => {
     const checkAuth = () => {
-      const isCurrentlyAuthenticated = true; // Simulated for demo
-      setIsAuthenticated(isCurrentlyAuthenticated);
+      setIsAuthenticated(!!localStorage.getItem("token"));
     };
     
     checkAuth();
@@ -63,8 +64,14 @@ const ChatbotPopup: React.FC = () => {
   }, []);
 
   const handleLogout = () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("userRole");
+    localStorage.removeItem("userId");
+    localStorage.removeItem("selectedRole");
     setIsAuthenticated(false);
-    alert("Logged out successfully!");
+    // Tell the rest of the app (navbar, etc.) that auth changed, then go home.
+    window.dispatchEvent(new Event("authChange"));
+    navigate("/");
   };
 
   const scrollToBottom = () => {

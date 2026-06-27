@@ -409,7 +409,7 @@ const XRayUpload: React.FC = () => {
                     <motion.button
                       whileHover={{ scale: 1.02 }}
                       whileTap={{ scale: 0.98 }}
-                      onClick={() => handleDownload(processedResult.report_url || processedResult.detections_url, 'detection_report.txt')}
+                      onClick={() => handleDownload(processedResult.report_url || processedResult.detections_url, 'detection_report.pdf')}
                       className="flex-1 flex items-center justify-center gap-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-3 px-4 rounded-xl transition-colors"
                     >
                       <FiFileText className="w-5 h-5" />
