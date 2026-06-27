@@ -40,22 +40,19 @@ def _region_words(bbox: List[float], width: int, height: int) -> str:
     except Exception:
         return "highlighted area on uploaded X-ray"
 
-    if yc < 0.50: 
+    if yc < 0.50:
         vertical = "upper wrist area"
-        bone = "Distal Radius/Ulna"
-    elif yc > 0.70: 
+    elif yc > 0.70:
         vertical = "lower wrist area"
-        bone = "Radius/Ulna shaft"
-    else: 
+    else:
         vertical = "center region"
-        bone = "Distal Radius/Ulna"
 
     if xc < 0.40: horizontal = "left side"
     elif xc > 0.60: horizontal = "right side"
     else: horizontal = None
 
     region = f"{vertical}, {horizontal}" if horizontal else vertical
-    return f"{region} (likely involving {bone})"
+    return region
 
 def _status_for(class_name: str, detections: List[Dict[str, Any]]) -> str:
     confs = [float(d["confidence"]) for d in detections if d.get("class_name") == class_name]
