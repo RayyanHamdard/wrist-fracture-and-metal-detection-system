@@ -21,6 +21,9 @@ const contactReasons = [
   { value: "other", label: "Other" }
 ];
 
+// Backend API base URL — configurable via VITE_API_URL for deployment.
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
+
 const Contact: FunctionComponent = () => {
   const [formData, setFormData] = useState({
     name: "",
@@ -31,6 +34,7 @@ const Contact: FunctionComponent = () => {
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     setFormData(prev => ({
@@ -42,12 +46,39 @@ const Contact: FunctionComponent = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
-    
-    // Simulate form submission
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
-    setIsSubmitting(false);
-    setIsSubmitted(true);
+    setSubmitError(null);
+
+    try {
+      const res = await fetch(`${API_BASE}/contact`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: formData.name.trim(),
+          email: formData.email.trim(),
+          organization: formData.organization.trim() || undefined,
+          reason: formData.reason || undefined,
+          message: formData.message.trim(),
+        }),
+      });
+
+      if (res.ok) {
+        setIsSubmitted(true);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        const detail = data?.detail;
+        const msg =
+          typeof detail === "string"
+            ? detail
+            : Array.isArray(detail)
+            ? detail.map((d: any) => d?.msg).filter(Boolean).join(", ")
+            : "Failed to send message. Please try again.";
+        setSubmitError(msg || "Failed to send message. Please try again.");
+      }
+    } catch (err) {
+      setSubmitError("Could not reach the server. Please check your connection and try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -111,6 +142,7 @@ const Contact: FunctionComponent = () => {
                     <button
                       onClick={() => {
                         setIsSubmitted(false);
+                        setSubmitError(null);
                         setFormData({ name: "", email: "", organization: "", reason: "", message: "" });
                       }}
                       className="px-6 py-3 bg-emerald-500/20 text-emerald-400 rounded-lg hover:bg-emerald-500/30 transition-colors"
@@ -200,6 +232,12 @@ const Contact: FunctionComponent = () => {
                         placeholder="Tell us what's on your mind..."
                       />
                     </div>
+
+                    {submitError && (
+                      <div className="p-3 bg-red-500/20 border border-red-500/30 rounded-lg text-red-300 text-sm">
+                        {submitError}
+                      </div>
+                    )}
 
                     <motion.button
                       type="submit"

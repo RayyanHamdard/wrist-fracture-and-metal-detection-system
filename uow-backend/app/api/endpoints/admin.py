@@ -119,13 +119,30 @@ class DashboardStats(BaseModel):
     total_analyses: int
     active_users: int
     inactive_users: int
+    total_contact_messages: int = 0
+    unread_contact_messages: int = 0
+
+
+class ContactMessageItem(BaseModel):
+    id: int
+    name: str
+    email: str
+    organization: Optional[str]
+    reason: Optional[str]
+    message: str
+    status: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
 
 
 # ============ Dependency Imports ============
 # These will be imported from main.py
 
-def get_admin_endpoints(get_db, get_current_user, get_password_hash, User, ClientProfile, 
-                        HospitalEntity, HospitalStaff, HospitalClient, AdminProfile, AnalysisHistory):
+def get_admin_endpoints(get_db, get_current_user, get_password_hash, User, ClientProfile,
+                        HospitalEntity, HospitalStaff, HospitalClient, AdminProfile, AnalysisHistory,
+                        ContactMessage):
     """
     Factory function to create admin endpoints with dependencies injected.
     This pattern allows us to avoid circular imports.
@@ -157,7 +174,9 @@ def get_admin_endpoints(get_db, get_current_user, get_password_hash, User, Clien
         total_analyses = db.query(AnalysisHistory).count()
         active_users = db.query(User).filter(User.status == "active").count()
         inactive_users = db.query(User).filter(User.status != "active").count()
-        
+        total_contact_messages = db.query(ContactMessage).count()
+        unread_contact_messages = db.query(ContactMessage).filter(ContactMessage.status == "new").count()
+
         return DashboardStats(
             total_users=total_users,
             total_clients=total_clients,
@@ -166,7 +185,9 @@ def get_admin_endpoints(get_db, get_current_user, get_password_hash, User, Clien
             total_hospital_entities=total_hospital_entities,
             total_analyses=total_analyses,
             active_users=active_users,
-            inactive_users=inactive_users
+            inactive_users=inactive_users,
+            total_contact_messages=total_contact_messages,
+            unread_contact_messages=unread_contact_messages
         )
     
     # ============ User Management ============
@@ -769,12 +790,20 @@ def get_admin_endpoints(get_db, get_current_user, get_password_hash, User, Clien
         user_id: Optional[int] = None,
         hospital_id: Optional[int] = None,
         image_type: Optional[str] = None,
+        search: Optional[str] = None,
         skip: int = Query(0, ge=0),
-        limit: int = Query(50, ge=1, le=100),
+        limit: int = Query(200, ge=1, le=500),
         db: Session = Depends(get_db),
         admin: User = Depends(require_admin)
     ):
-        """List all analyses"""
+        """List all analyses with full detail for admin review (newest first).
+
+        Filter hospital-wise (``hospital_id``) or patient/client-wise (``user_id``
+        or free-text ``search`` over name/email/filename). Each item includes the
+        annotated image URL, parsed detections, and the PDF report URL.
+        """
+        import json as _json
+        import os
         query = db.query(AnalysisHistory)
         
         if user_id:
@@ -788,15 +817,102 @@ def get_admin_endpoints(get_db, get_current_user, get_password_hash, User, Clien
         
         result = []
         for a in analyses:
-            user = db.query(User).filter(User.id == a.user_id).first()
+            user = db.query(User).filter(User.id == a.user_id).first() if a.user_id else None
+            hospital = (db.query(HospitalEntity).filter(HospitalEntity.id == a.hospital_id).first()
+                        if a.hospital_id else None)
+
+            # Patient/client-wise free-text filter (name, email, or filename).
+            if search:
+                s = search.lower()
+                haystack = " ".join([
+                    (user.name if user else "") or "",
+                    (user.email if user else "") or "",
+                    a.original_filename or "",
+                ]).lower()
+                if s not in haystack:
+                    continue
+
+            # Parse the stored detections JSON back into a list.
+            detections = []
+            if a.detections:
+                try:
+                    detections = _json.loads(a.detections)
+                except Exception:
+                    detections = []
+
+            # Processed image + PDF report live in `processed/`. Normalise to a
+            # bare filename, then derive the report name from the image name.
+            # Only expose a URL when the file ACTUALLY exists on disk, so the UI
+            # never offers a download that 404s (older analyses predate the PDF
+            # report feature and have no report file).
+            processed = (a.processed_filename or "").replace("\\", "/").rsplit("/", 1)[-1]
+            processed_image_url = None
+            if processed and os.path.isfile(os.path.join("processed", processed)):
+                processed_image_url = f"processed/{processed}"
+            report_url = None
+            if processed.endswith("_processed.png"):
+                report_name = processed.replace("_processed.png", "_report.pdf")
+                if os.path.isfile(os.path.join("processed", report_name)):
+                    report_url = f"processed/{report_name}"
+
             result.append({
                 "id": a.id,
                 "user_id": a.user_id,
-                "user_name": user.name if user else None,
+                "user_name": (user.name if user else None) or ("Guest" if not a.user_id else None),
                 "user_email": user.email if user else None,
+                "hospital_id": a.hospital_id,
+                "hospital_name": hospital.name if hospital else None,
                 "image_type": a.image_type,
                 "original_filename": a.original_filename,
-                "created_at": a.created_at
+                "processed_image_url": processed_image_url,
+                "report_url": report_url,
+                "detections": detections,
+                "created_at": a.created_at,
             })
-        
+
         return result
+
+    # ============ Contact Messages ============
+
+    @router.get("/contact-messages", response_model=List[ContactMessageItem])
+    def list_contact_messages(
+        status_filter: Optional[str] = None,
+        skip: int = Query(0, ge=0),
+        limit: int = Query(100, ge=1, le=200),
+        db: Session = Depends(get_db),
+        admin: User = Depends(require_admin)
+    ):
+        """List contact-form submissions (newest first)."""
+        query = db.query(ContactMessage)
+        if status_filter:
+            query = query.filter(ContactMessage.status == status_filter)
+        messages = query.order_by(ContactMessage.created_at.desc()).offset(skip).limit(limit).all()
+        return messages
+
+    @router.put("/contact-messages/{message_id}/read")
+    def mark_contact_message_read(
+        message_id: int,
+        db: Session = Depends(get_db),
+        admin: User = Depends(require_admin)
+    ):
+        """Mark a contact message as read."""
+        msg = db.query(ContactMessage).filter(ContactMessage.id == message_id).first()
+        if not msg:
+            raise HTTPException(status_code=404, detail="Message not found")
+        msg.status = "read"
+        db.commit()
+        return {"message": "Message marked as read"}
+
+    @router.delete("/contact-messages/{message_id}")
+    def delete_contact_message(
+        message_id: int,
+        db: Session = Depends(get_db),
+        admin: User = Depends(require_admin)
+    ):
+        """Delete a contact message."""
+        msg = db.query(ContactMessage).filter(ContactMessage.id == message_id).first()
+        if not msg:
+            raise HTTPException(status_code=404, detail="Message not found")
+        db.delete(msg)
+        db.commit()
+        return {"message": "Message deleted"}

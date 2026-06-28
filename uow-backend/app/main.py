@@ -180,6 +180,20 @@ class AnalysisHistory(Base):
     notes = Column(Text, nullable=True)
 
 
+class ContactMessage(Base):
+    """Contact-form submissions from the public Contact page."""
+    __tablename__ = "contact_messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False)
+    email = Column(String(255), nullable=False, index=True)
+    organization = Column(String(255), nullable=True)
+    reason = Column(String(100), nullable=True)
+    message = Column(Text, nullable=False)
+    status = Column(String(20), default="new")  # new | read
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 # ============ Create Tables ============
 
 Base.metadata.create_all(bind=engine)
@@ -271,7 +285,8 @@ get_admin_endpoints(
     HospitalStaff=HospitalStaff,
     HospitalClient=HospitalClient,
     AdminProfile=AdminProfile,
-    AnalysisHistory=AnalysisHistory
+    AnalysisHistory=AnalysisHistory,
+    ContactMessage=ContactMessage
 )
 
 # Initialize hospital router
@@ -611,6 +626,35 @@ def get_hospitals_list(db: Session = Depends(get_db)):
         }
         for h in hospitals
     ]
+
+
+class ContactInput(BaseModel):
+    name: str
+    email: EmailStr
+    message: str
+    organization: Optional[str] = None
+    reason: Optional[str] = None
+
+
+@app.post("/contact")
+def submit_contact_message(payload: ContactInput, db: Session = Depends(get_db)):
+    """Public endpoint: store a Contact-form submission for admins to review."""
+    name = (payload.name or "").strip()
+    message = (payload.message or "").strip()
+    if not name or not message:
+        raise HTTPException(status_code=400, detail="Name and message are required")
+
+    contact = ContactMessage(
+        name=name[:255],
+        email=str(payload.email),
+        organization=((payload.organization or "").strip()[:255] or None),
+        reason=((payload.reason or "").strip()[:100] or None),
+        message=message,
+    )
+    db.add(contact)
+    db.commit()
+    db.refresh(contact)
+    return {"message": "Thank you — your message has been received.", "id": contact.id}
 
 
 @app.get("/")

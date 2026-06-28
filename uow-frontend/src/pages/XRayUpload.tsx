@@ -78,28 +78,11 @@ const XRayUpload: React.FC = () => {
         const data = await response.json();
         setProcessedResult(data);
 
-        // Record the completed analysis so dashboard stats (e.g. "Total
-        // Analyses") reflect it. Only runs on a successful detection — failed
-        // uploads and rejected/invalid images never reach this branch. Sent
-        // best-effort so it can never break the result display.
-        if (token) {
-          try {
-            const recordData = new FormData();
-            recordData.append('image_type', 'xray');
-            recordData.append('original_filename', file.name);
-            if (data.processed_image_url) {
-              recordData.append('processed_filename', data.processed_image_url);
-            }
-            recordData.append('detections', JSON.stringify(data.detections || []));
-            await fetch(`${API_BASE}/analysis/record`, {
-              method: 'POST',
-              headers: { Authorization: `Bearer ${token}` },
-              body: recordData,
-            });
-          } catch (recordErr) {
-            console.error('Failed to record analysis:', recordErr);
-          }
-        }
+        // NOTE: the completed analysis is now recorded server-side by the
+        // /xray/ endpoint itself (for logged-in AND anonymous uploads), so the
+        // admin "Total Analyses" stat always increments. We intentionally do
+        // NOT call /analysis/record here — that would double-count logged-in
+        // analyses.
       } else {
         const errorData = await response.json().catch(() => ({}));
         // FastAPI returns `detail` as a string for HTTPExceptions but as an
