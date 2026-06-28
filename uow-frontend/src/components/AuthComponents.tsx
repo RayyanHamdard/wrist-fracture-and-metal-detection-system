@@ -7,6 +7,19 @@ import { Button } from "@mui/material";
 // Backend API base URL — configurable via VITE_API_URL for deployment.
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
+// FastAPI returns `detail` as a string for HTTPExceptions but as an array of
+// objects for 422 validation errors (e.g. an invalid email format). Turn either
+// shape into a readable message so users never see "[object Object]".
+const errorText = (data: any, fallback: string): string => {
+  const detail = data?.detail;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    const msg = detail.map((d: any) => d?.msg).filter(Boolean).join(", ");
+    return msg || fallback;
+  }
+  return fallback;
+};
+
 // Define the Protected Route component
 interface ProtectedRouteProps {
   children: ReactNode;
@@ -159,8 +172,8 @@ export const SignIn: React.FC = () => {
       });
       
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || "Login failed");
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorText(errorData, "Login failed"));
       }
       
       const data = await response.json();
@@ -459,8 +472,8 @@ export const SignUp: React.FC = () => {
   
       if (!response.ok) {
         if (response.headers.get("content-type")?.includes("application/json")) {
-          const errorData = await response.json();
-          throw new Error(errorData.detail || JSON.stringify(errorData));
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorText(errorData, `Server error: ${response.status}`));
         } else {
           throw new Error(`Server error: ${response.status}`);
         }

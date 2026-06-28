@@ -129,9 +129,20 @@ async def upload_xray_image(
 
 @router.get("/download/{file_path:path}")
 async def download_xray_image(file_path: str):
-    full_path = os.path.join(os.getcwd(), file_path)
+    # SECURITY: restrict downloads to the generated-output directories and block
+    # path traversal ("..", absolute paths). Without this, a request such as
+    # /xray/download/../.env could read the SECRET_KEY, DATABASE_URL, or source
+    # code. We resolve the real path and require it to live under an allowed root.
+    cwd = os.getcwd()
+    allowed_roots = [
+        os.path.realpath(os.path.join(cwd, "processed")),
+        os.path.realpath(os.path.join(cwd, "app", "static")),
+    ]
+    requested = os.path.realpath(os.path.join(cwd, file_path))
+    if not any(requested == root or requested.startswith(root + os.sep) for root in allowed_roots):
+        raise HTTPException(status_code=403, detail="Invalid file path")
 
-    if not os.path.exists(full_path):
+    if not os.path.isfile(requested):
         raise HTTPException(status_code=404, detail="File not found")
 
-    return FileResponse(full_path)
+    return FileResponse(requested)

@@ -46,7 +46,16 @@ BASE_DIR = "app/static"
 def save_file1(file: UploadFile, folder: str) -> str:
     upload_folder = os.path.join(BASE_DIR, "uploads", folder)
     os.makedirs(upload_folder, exist_ok=True)
-    file_path = os.path.join(upload_folder, file.filename)
+    # Use ONLY the base name (strip any directory components a crafted upload
+    # might include, e.g. "../../evil") and prefix a short unique id. This stops
+    # path traversal AND ensures concurrent/repeated uploads of the same
+    # filename never overwrite each other — or each other's generated outputs,
+    # which are derived from this saved name (processed image, report, etc.).
+    safe_name = os.path.basename(file.filename or "").strip()
+    if not safe_name or safe_name in (".", ".."):
+        safe_name = "upload"
+    unique_name = f"{uuid.uuid4().hex[:8]}_{safe_name}"
+    file_path = os.path.join(upload_folder, unique_name)
     with open(file_path, "wb") as f:
         f.write(file.file.read())
     return file_path
