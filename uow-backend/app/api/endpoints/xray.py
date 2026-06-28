@@ -57,6 +57,59 @@ def _resolve_patient_name(authorization: Optional[str]) -> Optional[str]:
         # Never let report-name resolution break the detection flow.
         return None
 
+
+def _record_analysis_safe(authorization: Optional[str], original_filename: Optional[str],
+                          file_path: str, result: Dict[str, Any]) -> None:
+    """Best-effort: write one AnalysisHistory row for a completed detection.
+
+    Runs server-side so the admin "Total Analyses" stat increments for EVERY
+    successful analysis — including anonymous uploads (user_id stays NULL).
+    Any failure here is swallowed so it can never break the detection response.
+    """
+    try:
+        import json
+        from jose import jwt, JWTError
+        from app.main import SessionLocal, User, HospitalStaff, AnalysisHistory, SECRET_KEY, ALGORITHM
+
+        user_id = None
+        hospital_id = None
+        db = SessionLocal()
+        try:
+            if authorization and authorization.lower().startswith("bearer "):
+                token = authorization.split(" ", 1)[1].strip()
+                try:
+                    payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+                    email = payload.get("sub")
+                except JWTError:
+                    email = None
+                if email:
+                    user = db.query(User).filter(User.email == email).first()
+                    if user:
+                        user_id = user.id
+                        if user.role == "hospital":
+                            staff = db.query(HospitalStaff).filter(
+                                HospitalStaff.user_id == user.id).first()
+                            if staff:
+                                hospital_id = staff.hospital_id
+
+            processed = result.get("processed_image") or ""
+            analysis = AnalysisHistory(
+                user_id=user_id,
+                hospital_id=hospital_id,
+                image_type="xray",
+                original_filename=(original_filename or os.path.basename(file_path)),
+                processed_filename=(os.path.basename(processed) or None),
+                detections=json.dumps(result.get("detections", [])),
+            )
+            db.add(analysis)
+            db.commit()
+        finally:
+            db.close()
+    except Exception:
+        # Recording is non-critical; never surface an error to the user.
+        pass
+
+
 @router.post("/", response_model=Dict[str, Any])  # Accept any type for values
 async def upload_xray_image(
     file: UploadFile = File(...),
@@ -95,6 +148,10 @@ async def upload_xray_image(
             conf_threshold=conf_threshold,
             debug=debug,
         )
+
+        # Record this analysis server-side so the admin "Total Analyses" stat
+        # increments for every successful detection — logged-in or anonymous.
+        _record_analysis_safe(authorization, file.filename, file_path, result)
 
         # Build a human-readable AI screening report (replaces the raw YOLO
         # label file as the user-facing "Download Report").

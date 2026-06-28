@@ -73,6 +73,24 @@ interface HospitalProfile {
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
+// Backend timestamps are naive UTC (no timezone suffix). Appending "Z" when no
+// timezone is present forces a UTC parse so the value renders correctly in the
+// viewer's local timezone (otherwise it shows hours off).
+const toLocalDate = (s?: string | null): Date | null => {
+  if (!s) return null;
+  const hasTz = /[zZ]|[+-]\d{2}:?\d{2}$/.test(s);
+  const d = new Date(hasTz ? s : `${s}Z`);
+  return isNaN(d.getTime()) ? null : d;
+};
+const formatDateTime = (s?: string | null): string => {
+  const d = toLocalDate(s);
+  return d ? d.toLocaleString() : "—";
+};
+const formatDate = (s?: string | null): string => {
+  const d = toLocalDate(s);
+  return d ? d.toLocaleDateString() : "—";
+};
+
 const HospitalDashboard: React.FC = () => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<"overview" | "clients" | "analyze">("overview");
@@ -384,7 +402,7 @@ const HospitalDashboard: React.FC = () => {
                         <span className="text-slate-500">ID: {client.client_id}</span>
                         <span className="text-slate-500 flex items-center gap-1">
                           <Clock className="w-3 h-3" />
-                          {new Date(client.assigned_at).toLocaleDateString()}
+                          {formatDate(client.assigned_at)}
                         </span>
                       </div>
                       {client.organization && (
@@ -439,7 +457,7 @@ const HospitalDashboard: React.FC = () => {
                   <div className="bg-slate-700/30 rounded-lg p-4">
                     <p className="text-slate-400 text-sm">Assigned Since</p>
                     <p className="text-white font-medium">
-                      {new Date(selectedClient.assigned_at).toLocaleDateString()}
+                      {formatDate(selectedClient.assigned_at)}
                     </p>
                   </div>
                   {selectedClient.organization && (
@@ -477,7 +495,7 @@ const HospitalDashboard: React.FC = () => {
                           <div>
                             <p className="text-white font-medium">{analysis.original_filename}</p>
                             <p className="text-slate-400 text-sm">
-                              {analysis.image_type.toUpperCase()} • {new Date(analysis.created_at).toLocaleString()}
+                              {analysis.image_type.toUpperCase()} • {formatDateTime(analysis.created_at)}
                             </p>
                           </div>
                         </div>

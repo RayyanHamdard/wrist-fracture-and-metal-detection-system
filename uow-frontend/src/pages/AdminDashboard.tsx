@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import {
   Users, Building2, Activity, Settings, Search, Plus, Edit2, Trash2,
   UserPlus, Shield, X, Check, AlertCircle, ChevronDown, LogOut,
-  RefreshCw, Eye, Key, UserMinus, Link2, Unlink
+  RefreshCw, Eye, Key, UserMinus, Link2, Unlink, Mail, Upload, FileText, Download
 } from "lucide-react";
 
 // Types
@@ -17,6 +17,39 @@ interface DashboardStats {
   total_analyses: number;
   active_users: number;
   inactive_users: number;
+  total_contact_messages?: number;
+  unread_contact_messages?: number;
+}
+
+interface ContactMessage {
+  id: number;
+  name: string;
+  email: string;
+  organization: string | null;
+  reason: string | null;
+  message: string;
+  status: string;
+  created_at: string;
+}
+
+interface DetectionItem {
+  class_name: string;
+  confidence: number;
+}
+
+interface AnalysisRecord {
+  id: number;
+  user_id: number | null;
+  user_name: string | null;
+  user_email: string | null;
+  hospital_id: number | null;
+  hospital_name: string | null;
+  image_type: string;
+  original_filename: string;
+  processed_image_url: string | null;
+  report_url: string | null;
+  detections: DetectionItem[];
+  created_at: string;
 }
 
 interface User {
@@ -88,14 +121,63 @@ const extractErrorMessage = (data: any, fallback: string): string => {
   return fallback;
 };
 
+// Backend timestamps are naive UTC (e.g. "2026-06-28T19:43:40", no timezone
+// suffix). The browser would otherwise parse them as LOCAL time and show them
+// ~hours off. Appending "Z" when no timezone is present forces a UTC parse, so
+// the value is then rendered correctly in the viewer's local timezone.
+const toLocalDate = (s?: string | null): Date | null => {
+  if (!s) return null;
+  const hasTz = /[zZ]|[+-]\d{2}:?\d{2}$/.test(s);
+  const d = new Date(hasTz ? s : `${s}Z`);
+  return isNaN(d.getTime()) ? null : d;
+};
+const formatDateTime = (s?: string | null): string => {
+  const d = toLocalDate(s);
+  return d ? d.toLocaleString() : "—";
+};
+const formatDate = (s?: string | null): string => {
+  const d = toLocalDate(s);
+  return d ? d.toLocaleDateString() : "—";
+};
+
+// Dissolvability reference for common orthopedic implant metals (mirrors the
+// client X-ray page). A metal is only reported "dissolvable" when the admin
+// identifies it as a bioabsorbable metal — it is NEVER inferred from the model.
+interface MetalProfile { label: string; dissolvable: boolean; time: string; }
+const METAL_PROFILES: Record<string, MetalProfile> = {
+  magnesium:       { label: "Magnesium (Mg)",          dissolvable: true,  time: "~6-12 months" },
+  zinc:            { label: "Zinc (Zn)",               dissolvable: true,  time: "~12-24 months" },
+  iron:            { label: "Iron (Fe)",               dissolvable: true,  time: "~24+ months (very slow)" },
+  stainless_steel: { label: "Stainless steel (316L)",  dissolvable: false, time: "" },
+  titanium:        { label: "Titanium (Ti)",           dissolvable: false, time: "" },
+  cobalt_chromium: { label: "Cobalt-chromium (CoCr)",  dissolvable: false, time: "" },
+  nitinol:         { label: "Nitinol (NiTi)",          dissolvable: false, time: "" },
+};
+
+const severityColor = (c: number): string =>
+  c >= 0.7 ? "text-red-300 bg-red-500/20"
+    : c >= 0.4 ? "text-amber-300 bg-amber-500/20"
+    : "text-green-300 bg-green-500/20";
+
 const AdminDashboard: React.FC = () => {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<"overview" | "users" | "hospitals" | "assignments">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "users" | "hospitals" | "assignments" | "analyze" | "records" | "messages">("overview");
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [hospitals, setHospitals] = useState<Hospital[]>([]);
   const [unassignedClients, setUnassignedClients] = useState<UnassignedClient[]>([]);
   const [allClients, setAllClients] = useState<ClientWithAssignments[]>([]);
+  const [contactMessages, setContactMessages] = useState<ContactMessage[]>([]);
+  const [analyses, setAnalyses] = useState<AnalysisRecord[]>([]);
+  const [analysisSearch, setAnalysisSearch] = useState("");
+  const [analysisHospitalFilter, setAnalysisHospitalFilter] = useState<string>("");
+  // Analyze X-ray tab
+  const [analyzeFile, setAnalyzeFile] = useState<File | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analyzeResult, setAnalyzeResult] = useState<any | null>(null);
+  const [analyzeError, setAnalyzeError] = useState<string | null>(null);
+  // Metal type the admin picks per detected metal row → drives dissolvability.
+  const [metalChoices, setMetalChoices] = useState<Record<number, string>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
@@ -138,12 +220,14 @@ const AdminDashboard: React.FC = () => {
   const loadDashboardData = async () => {
     setLoading(true);
     try {
-      const [statsRes, usersRes, hospitalsRes, unassignedRes, allClientsRes] = await Promise.all([
+      const [statsRes, usersRes, hospitalsRes, unassignedRes, allClientsRes, contactRes, analysesRes] = await Promise.all([
         fetchWithAuth(`${API_BASE}/admin/dashboard/stats`),
         fetchWithAuth(`${API_BASE}/admin/users?${roleFilter ? `role=${roleFilter}` : ""}&${searchQuery ? `search=${searchQuery}` : ""}`),
         fetchWithAuth(`${API_BASE}/admin/hospitals`),
         fetchWithAuth(`${API_BASE}/admin/clients/unassigned`),
         fetchWithAuth(`${API_BASE}/admin/clients/all?${assignmentSearchQuery ? `search=${assignmentSearchQuery}` : ""}${hospitalFilter ? `&hospital_filter=${hospitalFilter}` : ""}`),
+        fetchWithAuth(`${API_BASE}/admin/contact-messages`),
+        fetchWithAuth(`${API_BASE}/admin/analyses?${analysisHospitalFilter ? `hospital_id=${analysisHospitalFilter}&` : ""}${analysisSearch ? `search=${encodeURIComponent(analysisSearch)}` : ""}`),
       ]);
 
       if (statsRes.ok) setStats(await statsRes.json());
@@ -151,6 +235,8 @@ const AdminDashboard: React.FC = () => {
       if (hospitalsRes.ok) setHospitals(await hospitalsRes.json());
       if (unassignedRes.ok) setUnassignedClients(await unassignedRes.json());
       if (allClientsRes.ok) setAllClients(await allClientsRes.json());
+      if (contactRes.ok) setContactMessages(await contactRes.json());
+      if (analysesRes.ok) setAnalyses(await analysesRes.json());
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -160,7 +246,7 @@ const AdminDashboard: React.FC = () => {
 
   useEffect(() => {
     loadDashboardData();
-  }, [roleFilter, searchQuery, assignmentSearchQuery, hospitalFilter]);
+  }, [roleFilter, searchQuery, assignmentSearchQuery, hospitalFilter, analysisSearch, analysisHospitalFilter]);
 
   const handleLogout = () => {
     localStorage.removeItem("token");
@@ -265,6 +351,93 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
+  const handleMarkMessageRead = async (id: number) => {
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/admin/contact-messages/${id}/read`, { method: "PUT" });
+      if (res.ok) loadDashboardData();
+    } catch (err) {
+      alert("Failed to update message");
+    }
+  };
+
+  const handleDeleteMessage = async (id: number) => {
+    if (!confirm("Delete this message?")) return;
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/admin/contact-messages/${id}`, { method: "DELETE" });
+      if (res.ok) loadDashboardData();
+    } catch (err) {
+      alert("Failed to delete message");
+    }
+  };
+
+  // Build a download URL for a processed-image / report path. The backend
+  // stores paths that may use Windows back-slashes; normalise to forward
+  // slashes so the /xray/download route resolves them.
+  const fileUrl = (p?: string | null) =>
+    p ? `${API_BASE}/xray/download/${String(p).replace(/\\/g, "/")}` : "";
+
+  const downloadFile = async (p: string | null, filename: string) => {
+    if (!p) return;
+    try {
+      const res = await fetch(fileUrl(p));
+      if (!res.ok) throw new Error();
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch {
+      alert("This file is no longer available on the server.");
+    }
+  };
+
+  const handleAnalyzeUpload = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!analyzeFile) return;
+    setAnalyzing(true);
+    setAnalyzeError(null);
+    setAnalyzeResult(null);
+    setMetalChoices({});
+    try {
+      const fd = new FormData();
+      fd.append("file", analyzeFile);
+      const res = await fetch(`${API_BASE}/xray/`, {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        body: fd,
+      });
+      if (res.ok) {
+        setAnalyzeResult(await res.json());
+        loadDashboardData(); // refresh stats + the Analyses list
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setAnalyzeError(extractErrorMessage(data, "Failed to analyze image"));
+      }
+    } catch {
+      setAnalyzeError("Could not reach the server. Please try again.");
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  // Dissolvability verdict for a detected metal row, from the admin's selection.
+  // Returns null until a type is chosen, so the selector shows first.
+  const renderMetalForecast = (index: number) => {
+    const choice = metalChoices[index];
+    if (!choice) return null;
+    const profile = METAL_PROFILES[choice];
+    if (!profile) return null;
+    return profile.dissolvable ? (
+      <span className="text-green-300 text-xs font-medium">Dissolvable · {profile.time}</span>
+    ) : (
+      <span className="text-amber-300 text-xs font-medium">Not dissolvable (permanent)</span>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
       {/* Header */}
@@ -308,6 +481,9 @@ const AdminDashboard: React.FC = () => {
               { id: "users", label: "Users", icon: Users },
               { id: "hospitals", label: "Hospitals", icon: Building2 },
               { id: "assignments", label: "Assignments", icon: Link2 },
+              { id: "analyze", label: "Analyze X-ray", icon: Upload },
+              { id: "records", label: "Analyses", icon: FileText },
+              { id: "messages", label: "Messages", icon: Mail },
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -320,6 +496,11 @@ const AdminDashboard: React.FC = () => {
               >
                 <tab.icon className="w-4 h-4" />
                 {tab.label}
+                {tab.id === "messages" && (stats?.unread_contact_messages ?? 0) > 0 && (
+                  <span className="ml-1 px-2 py-0.5 bg-pink-500/30 text-pink-200 rounded-full text-xs">
+                    {stats?.unread_contact_messages}
+                  </span>
+                )}
               </button>
             ))}
           </div>
@@ -489,7 +670,7 @@ const AdminDashboard: React.FC = () => {
                             </span>
                           </td>
                           <td className="px-6 py-4 text-slate-400 text-sm">
-                            {new Date(user.created_at).toLocaleDateString()}
+                            {formatDate(user.created_at)}
                           </td>
                           <td className="px-6 py-4">
                             <div className="flex items-center justify-end gap-2">
@@ -795,6 +976,371 @@ const AdminDashboard: React.FC = () => {
                   )}
                 </div>
               </div>
+            </motion.div>
+          )}
+
+          {/* Analyze X-ray Tab */}
+          {activeTab === "analyze" && (
+            <motion.div
+              key="analyze"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+            >
+              <div className="bg-slate-800/50 backdrop-blur-xl rounded-2xl border border-slate-700/50 p-6 mb-6">
+                <h2 className="text-xl font-semibold text-white flex items-center gap-2 mb-2">
+                  <Upload className="w-5 h-5 text-purple-400" />
+                  Analyze a Wrist X-ray
+                </h2>
+                <p className="text-slate-400 text-sm mb-5">
+                  Upload a wrist X-ray to run fracture &amp; metal detection. The result is
+                  recorded and will also appear under the <span className="text-slate-300">Analyses</span> tab.
+                </p>
+                <form onSubmit={handleAnalyzeUpload} className="flex flex-col sm:flex-row gap-3 sm:items-center">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => {
+                      setAnalyzeFile(e.target.files?.[0] || null);
+                      setAnalyzeResult(null);
+                      setAnalyzeError(null);
+                      setMetalChoices({});
+                    }}
+                    className="flex-1 text-sm text-slate-300 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-purple-500/20 file:text-purple-300 hover:file:bg-purple-500/30 file:cursor-pointer"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!analyzeFile || analyzing}
+                    className="flex items-center justify-center gap-2 px-5 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {analyzing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Activity className="w-4 h-4" />}
+                    {analyzing ? "Analyzing..." : "Analyze"}
+                  </button>
+                </form>
+                {analyzeError && (
+                  <div className="mt-4 p-3 bg-red-500/20 border border-red-500/30 rounded-lg text-red-300 text-sm">
+                    {analyzeError}
+                  </div>
+                )}
+              </div>
+
+              {analyzeResult && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+                  {/* Annotated image */}
+                  <div className="bg-slate-800/50 backdrop-blur-xl rounded-2xl border border-slate-700/50 p-6">
+                    <h3 className="text-white font-semibold mb-4">Annotated Image</h3>
+                    {analyzeResult.processed_image_url ? (
+                      <img
+                        src={fileUrl(analyzeResult.processed_image_url)}
+                        alt="Processed X-ray"
+                        className="w-full rounded-xl border border-slate-700/50 bg-slate-900/50"
+                      />
+                    ) : (
+                      <p className="text-slate-400 text-sm">No image returned.</p>
+                    )}
+                  </div>
+
+                  {/* Findings */}
+                  <div className="bg-slate-800/50 backdrop-blur-xl rounded-2xl border border-slate-700/50 p-6">
+                    <h3 className="text-white font-semibold mb-4">Findings</h3>
+
+                    {(!analyzeResult.detections || analyzeResult.detections.length === 0) ? (
+                      <div className="flex items-center gap-2 p-4 bg-green-500/10 border border-green-500/30 rounded-xl">
+                        <Check className="w-5 h-5 text-green-400 shrink-0" />
+                        <span className="text-green-300 text-sm">No fracture or metal detected.</span>
+                      </div>
+                    ) : (
+                      <>
+                        {analyzeResult.detections.some((d: DetectionItem) => d.class_name === "metal") && (
+                          <div className="flex items-start gap-2 p-3 mb-4 bg-teal-500/10 border border-teal-500/30 rounded-xl">
+                            <AlertCircle className="w-4 h-4 text-teal-300 shrink-0 mt-0.5" />
+                            <p className="text-teal-200 text-xs leading-relaxed">
+                              A metal implant was detected. Select its metal type to see whether it
+                              is dissolvable and its estimated resorption time.
+                            </p>
+                          </div>
+                        )}
+
+                        <div className="space-y-3">
+                          {analyzeResult.detections.map((d: DetectionItem, i: number) => (
+                            <div key={i} className="bg-slate-700/40 rounded-xl px-4 py-3">
+                              <div className="flex items-center justify-between gap-3">
+                                <span className="text-slate-100 font-medium capitalize">{d.class_name}</span>
+                                <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${severityColor(d.confidence)}`}>
+                                  {Math.round((d.confidence || 0) * 100)}%
+                                </span>
+                              </div>
+                              {d.class_name === "metal" && (
+                                <div className="mt-3 flex flex-col gap-2">
+                                  <select
+                                    value={metalChoices[i] ?? ""}
+                                    onChange={(e) => setMetalChoices((prev) => ({ ...prev, [i]: e.target.value }))}
+                                    aria-label="Select detected metal type"
+                                    className="w-full bg-slate-800 border border-slate-600 text-slate-200 text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-teal-500"
+                                  >
+                                    <option value="">Select metal type…</option>
+                                    {Object.entries(METAL_PROFILES).map(([key, profile]) => (
+                                      <option key={key} value={key}>{profile.label}</option>
+                                    ))}
+                                  </select>
+                                  {renderMetalForecast(i)}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+
+                        {analyzeResult.detections.some((d: DetectionItem) => d.class_name === "metal") && (
+                          <p className="text-xs text-slate-500 mt-4 leading-relaxed">
+                            Dissolvability is based on the metal type you select — never inferred from
+                            the X-ray. Time estimates are general, literature-based resorption ranges,
+                            not patient-specific guidance.
+                          </p>
+                        )}
+                      </>
+                    )}
+
+                    {analyzeResult.report_url && (
+                      <div className="flex flex-wrap gap-3 mt-5 pt-5 border-t border-slate-700/50">
+                        <button
+                          onClick={() => downloadFile(analyzeResult.report_url, "wrist_report.pdf")}
+                          className="inline-flex items-center gap-2 px-4 py-2.5 bg-teal-500/20 text-teal-300 rounded-lg hover:bg-teal-500/30 transition-colors text-sm font-medium"
+                        >
+                          <Download className="w-4 h-4" />
+                          Download Report
+                        </button>
+                        <a
+                          href={fileUrl(analyzeResult.report_url)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-2 px-4 py-2.5 bg-slate-700/50 text-slate-300 rounded-lg hover:bg-slate-700 transition-colors text-sm font-medium"
+                        >
+                          <Eye className="w-4 h-4" />
+                          View Report
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          )}
+
+          {/* Analyses Records Tab */}
+          {activeTab === "records" && (
+            <motion.div
+              key="records"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-semibold text-white flex items-center gap-2">
+                  <FileText className="w-5 h-5 text-purple-400" />
+                  All Analyses
+                  {analyses.length > 0 && (
+                    <span className="ml-2 px-2 py-0.5 bg-slate-700 text-slate-300 rounded-full text-sm">
+                      {analyses.length}
+                    </span>
+                  )}
+                </h2>
+              </div>
+
+              {/* Filters: patient/client-wise and hospital-wise */}
+              <div className="flex flex-col sm:flex-row gap-4 mb-6">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Search by patient/client name, email, or file..."
+                    value={analysisSearch}
+                    onChange={(e) => setAnalysisSearch(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2 bg-slate-800/50 border border-slate-700/50 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+                <select
+                  value={analysisHospitalFilter}
+                  onChange={(e) => setAnalysisHospitalFilter(e.target.value)}
+                  className="px-4 py-2 bg-slate-800/50 border border-slate-700/50 rounded-lg text-white focus:outline-none focus:border-purple-500"
+                >
+                  <option value="">All Hospitals</option>
+                  {hospitals.map((h) => (
+                    <option key={h.id} value={h.id}>{h.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="bg-slate-800/50 backdrop-blur-xl rounded-2xl border border-slate-700/50 overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-slate-800/50">
+                      <tr>
+                        <th className="px-6 py-4 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Patient / Client</th>
+                        <th className="px-6 py-4 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Hospital</th>
+                        <th className="px-6 py-4 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Findings</th>
+                        <th className="px-6 py-4 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">File</th>
+                        <th className="px-6 py-4 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Date</th>
+                        <th className="px-6 py-4 text-right text-xs font-semibold text-slate-400 uppercase tracking-wider">Report</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-700/50">
+                      {analyses.map((a) => (
+                        <tr key={a.id} className="hover:bg-slate-700/30 transition-colors">
+                          <td className="px-6 py-4">
+                            <div className="text-white font-medium">{a.user_name || "Guest"}</div>
+                            <div className="text-slate-400 text-sm">{a.user_email || "—"}</div>
+                          </td>
+                          <td className="px-6 py-4 text-slate-300 text-sm">{a.hospital_name || "—"}</td>
+                          <td className="px-6 py-4">
+                            {a.detections.length === 0 ? (
+                              <span className="text-green-400 text-sm">No findings</span>
+                            ) : (
+                              <div className="flex flex-wrap gap-1">
+                                {a.detections.map((d, i) => (
+                                  <span
+                                    key={i}
+                                    className={`px-2 py-0.5 rounded text-xs capitalize ${
+                                      d.class_name === "fracture"
+                                        ? "bg-red-500/20 text-red-300"
+                                        : "bg-amber-500/20 text-amber-300"
+                                    }`}
+                                  >
+                                    {d.class_name} {Math.round((d.confidence || 0) * 100)}%
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-6 py-4 text-slate-400 text-sm max-w-[160px] truncate" title={a.original_filename}>{a.original_filename}</td>
+                          <td className="px-6 py-4 text-slate-400 text-sm whitespace-nowrap">{formatDateTime(a.created_at)}</td>
+                          <td className="px-6 py-4">
+                            <div className="flex items-center justify-end gap-2">
+                              {a.processed_image_url && (
+                                <a
+                                  href={fileUrl(a.processed_image_url)}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  title="View annotated image"
+                                  className="p-2 text-slate-400 hover:text-purple-400 transition-colors"
+                                >
+                                  <Eye className="w-4 h-4" />
+                                </a>
+                              )}
+                              {a.report_url && (
+                                <button
+                                  onClick={() => downloadFile(a.report_url, `report_${a.id}.pdf`)}
+                                  title="Download PDF report"
+                                  className="p-2 text-slate-400 hover:text-teal-400 transition-colors"
+                                >
+                                  <Download className="w-4 h-4" />
+                                </button>
+                              )}
+                              {!a.processed_image_url && !a.report_url && (
+                                <span className="text-slate-600 text-sm" title="Files no longer on the server">—</span>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {analyses.length === 0 && (
+                    <div className="p-12 text-center">
+                      <FileText className="w-10 h-10 text-slate-500 mx-auto mb-3" />
+                      <p className="text-slate-400">No analyses found.</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {/* Messages Tab */}
+          {activeTab === "messages" && (
+            <motion.div
+              key="messages"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+            >
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-xl font-semibold text-white flex items-center gap-2">
+                  <Mail className="w-5 h-5 text-pink-400" />
+                  Contact Messages
+                  {contactMessages.length > 0 && (
+                    <span className="ml-2 px-2 py-0.5 bg-slate-700 text-slate-300 rounded-full text-sm">
+                      {contactMessages.length}
+                    </span>
+                  )}
+                </h2>
+              </div>
+
+              {contactMessages.length === 0 ? (
+                <div className="bg-slate-800/50 backdrop-blur-xl rounded-xl border border-slate-700/50 p-12 text-center">
+                  <Mail className="w-10 h-10 text-slate-500 mx-auto mb-3" />
+                  <p className="text-slate-400">No messages yet. Submissions from the Contact page will appear here.</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {contactMessages.map((m) => (
+                    <div
+                      key={m.id}
+                      className={`bg-slate-800/50 backdrop-blur-xl rounded-2xl border p-6 ${
+                        m.status === "new" ? "border-pink-500/40" : "border-slate-700/50"
+                      }`}
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 mb-3">
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-white font-semibold">{m.name}</span>
+                            {m.status === "new" && (
+                              <span className="px-2 py-0.5 bg-pink-500/20 text-pink-300 rounded-full text-xs font-medium">New</span>
+                            )}
+                            {m.reason && (
+                              <span className="px-2 py-0.5 bg-purple-500/20 text-purple-300 rounded-full text-xs capitalize">{m.reason}</span>
+                            )}
+                          </div>
+                          <a href={`mailto:${m.email}`} className="text-teal-400 text-sm hover:underline">{m.email}</a>
+                          {m.organization && (
+                            <span className="text-slate-500 text-sm"> · {m.organization}</span>
+                          )}
+                        </div>
+                        <span className="text-slate-500 text-xs whitespace-nowrap">
+                          {formatDateTime(m.created_at)}
+                        </span>
+                      </div>
+
+                      <p className="text-slate-300 text-sm leading-relaxed whitespace-pre-wrap mb-4">{m.message}</p>
+
+                      <div className="flex items-center gap-2 pt-3 border-t border-slate-700/50">
+                        {m.status === "new" && (
+                          <button
+                            onClick={() => handleMarkMessageRead(m.id)}
+                            className="inline-flex items-center gap-2 px-3 py-1.5 bg-teal-500/20 text-teal-400 rounded-lg hover:bg-teal-500/30 transition-colors text-sm"
+                          >
+                            <Check className="w-4 h-4" />
+                            Mark as read
+                          </button>
+                        )}
+                        <a
+                          href={`mailto:${m.email}?subject=Re: Your message to Wrist Fracture Detection System`}
+                          className="inline-flex items-center gap-2 px-3 py-1.5 bg-slate-700/50 text-slate-300 rounded-lg hover:bg-slate-700 transition-colors text-sm"
+                        >
+                          <Mail className="w-4 h-4" />
+                          Reply
+                        </a>
+                        <button
+                          onClick={() => handleDeleteMessage(m.id)}
+                          className="inline-flex items-center gap-2 px-3 py-1.5 bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 transition-colors text-sm ml-auto"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </motion.div>
           )}
         </AnimatePresence>
