@@ -69,6 +69,25 @@ interface ClientWithAssignments {
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
+// Turn a FastAPI error body into a plain string. FastAPI returns `detail` as a
+// STRING for HTTPExceptions but as an ARRAY of objects for 422 validation
+// errors. Rendering that array straight into JSX crashes React with "Objects
+// are not valid as a React child" (a blank white screen), so every error path
+// must normalise it through here first.
+const extractErrorMessage = (data: any, fallback: string): string => {
+  const detail = data?.detail;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    const msg = detail
+      .map((e) => (e && typeof e === "object" ? e.msg : String(e)))
+      .filter(Boolean)
+      .join(", ");
+    return msg || fallback;
+  }
+  if (detail && typeof detail === "object") return detail.msg || fallback;
+  return fallback;
+};
+
 const AdminDashboard: React.FC = () => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<"overview" | "users" | "hospitals" | "assignments">("overview");
@@ -924,8 +943,8 @@ const CreateUserModal: React.FC<CreateUserModalProps> = ({ isOpen, onClose, onSu
           staff_id: "", department: "", position: "", admin_id: "", access_level: "full",
         });
       } else {
-        const data = await res.json();
-        setError(data.detail || "Failed to create user");
+        const data = await res.json().catch(() => ({}));
+        setError(extractErrorMessage(data, "Failed to create user"));
       }
     } catch (err) {
       setError("Failed to create user");
@@ -1136,9 +1155,20 @@ const CreateHospitalModal: React.FC<CreateHospitalModalProps> = ({ isOpen, onClo
     setError("");
 
     try {
+      // Only send optional fields when they actually have a value. An empty
+      // string for `email` fails the backend's EmailStr validation (422), so
+      // omit blanks entirely and let the backend default them to null.
+      const payload: Record<string, string> = {
+        name: formData.name.trim(),
+        code: formData.code.trim(),
+      };
+      if (formData.email.trim()) payload.email = formData.email.trim();
+      if (formData.phone.trim()) payload.phone = formData.phone.trim();
+      if (formData.address.trim()) payload.address = formData.address.trim();
+
       const res = await fetchWithAuth(`${API_BASE}/admin/hospitals`, {
         method: "POST",
-        body: JSON.stringify(formData),
+        body: JSON.stringify(payload),
       });
 
       if (res.ok) {
@@ -1146,8 +1176,8 @@ const CreateHospitalModal: React.FC<CreateHospitalModalProps> = ({ isOpen, onClo
         onClose();
         setFormData({ name: "", code: "", address: "", phone: "", email: "" });
       } else {
-        const data = await res.json();
-        setError(data.detail || "Failed to create hospital");
+        const data = await res.json().catch(() => ({}));
+        setError(extractErrorMessage(data, "Failed to create hospital"));
       }
     } catch (err) {
       setError("Failed to create hospital");

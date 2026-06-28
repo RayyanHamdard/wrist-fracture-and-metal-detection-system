@@ -101,8 +101,18 @@ const XRayUpload: React.FC = () => {
           }
         }
       } else {
-        const errorData = await response.json();
-        setError(errorData.detail || 'Failed to process image');
+        const errorData = await response.json().catch(() => ({}));
+        // FastAPI returns `detail` as a string for HTTPExceptions but as an
+        // array of objects for 422 validation errors. Never set the raw array
+        // into state — rendering it directly would crash React.
+        const detail = errorData?.detail;
+        const message =
+          typeof detail === 'string'
+            ? detail
+            : Array.isArray(detail)
+            ? detail.map((d: any) => d?.msg).filter(Boolean).join(', ') || 'Failed to process image'
+            : 'Failed to process image';
+        setError(message);
       }
     } catch (error) {
       setError('Error uploading the image. Please try again.');
@@ -333,7 +343,7 @@ const XRayUpload: React.FC = () => {
                           <tr className="border-b border-gray-700">
                             <th className="text-left py-3 px-2 text-slate-400 text-sm font-medium">Finding</th>
                             <th className="text-left py-3 px-2 text-slate-400 text-sm font-medium">Confidence</th>
-                            <th className="text-left py-3 px-2 text-slate-400 text-sm font-medium hidden sm:table-cell">Healing Time</th>
+                            <th className="text-left py-3 px-2 text-slate-400 text-sm font-medium hidden sm:table-cell whitespace-nowrap">Healing Time</th>
                             <th className="text-left py-3 px-2 text-slate-400 text-sm font-medium hidden md:table-cell">Dissolve Forecast</th>
                           </tr>
                         </thead>
@@ -355,16 +365,16 @@ const XRayUpload: React.FC = () => {
                                 </span>
                               </td>
                               <td className="py-3 px-2 text-slate-300 hidden sm:table-cell">{getHealingInfo(detection)}</td>
-                              <td className="py-3 px-2 hidden md:table-cell">
+                              <td className="py-3 px-2 hidden md:table-cell align-top min-w-0">
                                 {detection.class_name === "metal" ? (
-                                  <div className="flex flex-col gap-1.5 min-w-[12rem]">
+                                  <div className="flex flex-col gap-1.5 w-full min-w-0">
                                     <select
                                       value={metalChoices[index] ?? ''}
                                       onChange={(e) =>
                                         setMetalChoices((prev) => ({ ...prev, [index]: e.target.value }))
                                       }
                                       aria-label="Select detected metal type"
-                                      className="bg-gray-800 border border-slate-600 text-slate-200 text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-500"
+                                      className="w-full max-w-full truncate bg-gray-800 border border-slate-600 text-slate-200 text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-500"
                                     >
                                       <option value="">Select metal type…</option>
                                       {Object.entries(METAL_PROFILES).map(([key, profile]) => (
